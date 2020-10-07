@@ -12,7 +12,7 @@ class Eca_layer(nn.Module):
         k_size: Adaptive selection of kernel size
     """
     def __init__(self, channel, k_size=3):
-        super(eca_layer, self).__init__()
+        super(Eca_layer, self).__init__()
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.conv = nn.Conv1d(1, 1, kernel_size=k_size, padding=(k_size - 1) // 2, bias=False)
         self.sigmoid = nn.Sigmoid()
@@ -81,7 +81,6 @@ def create_modules(module_defs, img_size, cfg):
                 #                                        groups=mdef['groups'] if 'groups' in mdef else 1,
                 #                                        bias=not bn))
                 modules.add_module('Conv2d', GhostModule(inp=output_filters[-1], oup=filters, kernel_size=k, stride=stride))
-                modules.add_module('Eca', Eca_layer(filters, k_size=k))
             else:  # multiple-size conv
                 modules.add_module('MixConv2d', MixConv2d(in_ch=output_filters[-1],
                                                           out_ch=filters,
@@ -91,6 +90,7 @@ def create_modules(module_defs, img_size, cfg):
 
             if bn:
                 modules.add_module('BatchNorm2d', nn.BatchNorm2d(filters, momentum=0.03, eps=1E-4))
+                modules.add_module('Eca', Eca_layer(filters, k_size=k))
             else:
                 routs.append(i)  # detection output (goes into yolo layer)
 
