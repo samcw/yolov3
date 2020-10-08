@@ -6,7 +6,7 @@ ONNX_EXPORT = False
 
 # GhostModule
 class GhostModule(nn.Module):
-    def __init__(self, inp, oup, kernel_size=1, ratio=2, dw_size=3, stride=1):
+    def __init__(self, inp, oup, kernel_size=1, ratio=2, dw_size=3, stride=1, relu=True):
         super(GhostModule, self).__init__()
         self.oup = oup
         init_channels = math.ceil(oup / ratio)
@@ -14,10 +14,14 @@ class GhostModule(nn.Module):
 
         self.primary_conv = nn.Sequential(
             nn.Conv2d(inp, init_channels, kernel_size, stride, kernel_size//2, bias=False),
+            nn.BatchNorm2d(init_channels),
+            nn.ReLU(inplace=True) if relu else nn.Sequential(),
         )
 
         self.cheap_operation = nn.Sequential(
             nn.Conv2d(init_channels, new_channels, dw_size, 1, dw_size//2, groups=init_channels, bias=False),
+            nn.BatchNorm2d(new_channels),
+            nn.ReLU(inplace=True) if relu else nn.Sequential(),
         )
 
     def forward(self, x):
@@ -25,6 +29,7 @@ class GhostModule(nn.Module):
         x2 = self.cheap_operation(x1)
         out = torch.cat([x1,x2], dim=1)
         return out[:,:self.oup,:,:]
+
 
 def create_modules(module_defs, img_size, cfg):
     # Constructs module list of layer blocks from module configuration in module_defs
@@ -52,7 +57,7 @@ def create_modules(module_defs, img_size, cfg):
                 #                                        padding=k // 2 if mdef['pad'] else 0,
                 #                                        groups=mdef['groups'] if 'groups' in mdef else 1,
                 #                                        bias=not bn))
-                modules.add_module('Conv2d', GhostModule(inp=output_filters[-1], oup=filters, kernel_size=k, stride=stride))
+                modules.add_module('Conv2d', GhostModule(inp=output_filters[-1], oup=filters, kernel_size=k, stride=stride, relu=False))
             else:  # multiple-size conv
                 modules.add_module('MixConv2d', MixConv2d(in_ch=output_filters[-1],
                                                           out_ch=filters,
