@@ -58,14 +58,40 @@ class GhostModule(nn.Module):
         out = torch.cat([x1,x2], dim=1)
         return out[:,:self.oup,:,:]
 
-# Ghost Bottleneck
+def hard_sigmoid(x, inplace: bool = False):
+    if inplace:
+        return x.add_(3.).clamp_(0., 6.).div_(6.)
+    else:
+        return F.relu6(x + 3.) / 6.
+
+
+class SqueezeExcite(nn.Module):
+    def __init__(self, in_chs, se_ratio=0.25, reduced_base_chs=None,
+                 act_layer=nn.ReLU, gate_fn=hard_sigmoid, divisor=4, **_):
+        super(SqueezeExcite, self).__init__()
+        self.gate_fn = gate_fn
+        reduced_chs = _make_divisible((reduced_base_chs or in_chs) * se_ratio, divisor)
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.conv_reduce = nn.Conv2d(in_chs, reduced_chs, 1, bias=True)
+        self.act1 = act_layer(inplace=True)
+        self.conv_expand = nn.Conv2d(reduced_chs, in_chs, 1, bias=True)
+
+    def forward(self, x):
+        x_se = self.avg_pool(x)
+        x_se = self.conv_reduce(x_se)
+        x_se = self.act1(x_se)
+        x_se = self.conv_expand(x_se)
+        x = x * self.gate_fn(x_se)
+        return x
+
+        # Ghost Bottleneck
 class GhostBottleneck(nn.Module):
     """ Ghost bottleneck w/ optional SE"""
 
     def __init__(self, in_chs, mid_chs, out_chs, dw_kernel_size=3,
-                 stride=1, act_layer=nn.ReLU):
+                 stride=1, act_layer=nn.ReLU, se_ratio=0.):
         super(GhostBottleneck, self).__init__()
-        # has_se = se_ratio is not None and se_ratio > 0.
+        has_se = se_ratio is not None and se_ratio > 0.
         self.stride = stride
 
         # Point-wise expansion
@@ -79,10 +105,10 @@ class GhostBottleneck(nn.Module):
             self.bn_dw = nn.BatchNorm2d(mid_chs)
 
         # Squeeze-and-excitation
-        # if has_se:
-        #     self.se = SqueezeExcite(mid_chs, se_ratio=se_ratio)
-        # else:
-        #     self.se = None
+        if has_se:
+            self.se = SqueezeExcite(mid_chs, se_ratio=se_ratio)
+        else:
+            self.se = None
 
         # Point-wise linear projection
         self.ghost2 = GhostModule(mid_chs, out_chs, relu=False)
