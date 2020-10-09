@@ -121,6 +121,22 @@ class GhostBottleneck(nn.Module):
         x += self.shortcut(residual)
         return x
 
+def _make_divisible(v, divisor, min_value=None):
+    """
+    This function is taken from the original tf repo.
+    It ensures that all layers have a channel number that is divisible by 8
+    It can be seen here:
+    https://github.com/tensorflow/models/blob/master/research/slim/nets/mobilenet/mobilenet.py
+    """
+    if min_value is None:
+        min_value = divisor
+    new_v = max(min_value, int(v + divisor / 2) // divisor * divisor)
+    # Make sure that round down does not go down by more than 10%.
+    if new_v < 0.9 * v:
+        new_v += divisor
+    return new_v
+
+
 def create_modules(module_defs, img_size, cfg):
     # Constructs module list of layer blocks from module configuration in module_defs
 
@@ -139,6 +155,9 @@ def create_modules(module_defs, img_size, cfg):
             filters = mdef['filters']
             k = mdef['size']  # kernel size
             stride = mdef['stride'] if 'stride' in mdef else (mdef['stride_y'], mdef['stride_x'])
+            inputchannel = output_filters[-1]
+            outputchannel = _make_divisible(filters, 4)
+            hiddenchannel = _make_divisible(output_filters[-1], 4)
             if isinstance(k, int):  # single-size conv
                 # modules.add_module('Conv2d', nn.Conv2d(in_channels=output_filters[-1],
                 #                                        out_channels=filters,
@@ -147,8 +166,8 @@ def create_modules(module_defs, img_size, cfg):
                 #                                        padding=k // 2 if mdef['pad'] else 0,
                 #                                        groups=mdef['groups'] if 'groups' in mdef else 1,
                 #                                        bias=not bn))
-                modules.add_module('Conv2d', GhostModule(inp=output_filters[-1], oup=filters, kernel_size=k, stride=stride, relu=False))
-                modules.add_module('EcaLayer', Eca_layer(filters, k))
+                modules.add_module('Conv2d', GhostBottleneck(inputchannel, hiddenchannel, outputchannel, k, stride))
+                # modules.add_module('EcaLayer', Eca_layer(filters, k))
             else:  # multiple-size conv
                 modules.add_module('MixConv2d', MixConv2d(in_ch=output_filters[-1],
                                                           out_ch=filters,
