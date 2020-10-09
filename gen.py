@@ -43,8 +43,8 @@ def readTxtGhost(fileDir):
             mAP_Ghost.append(float(line[10]))
             F1_Ghost.append(float(line[11]))
 
-readTxtGhost('F:/DeepLearning/yolov3/results.txt')
-readTxt('F:/DeepLearning/yolov3/results_raw.txt')
+readTxtGhost('F:/DeepLearning/yolov3/resultsghost.txt')
+readTxt('F:/DeepLearning/yolov3/results.txt')
 
 plt.figure(1)
 plt.plot(epoch, Precision, linewidth=0.5, color='r', label='raw')

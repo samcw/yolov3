@@ -148,6 +148,7 @@ def create_modules(module_defs, img_size, cfg):
                 #                                        groups=mdef['groups'] if 'groups' in mdef else 1,
                 #                                        bias=not bn))
                 modules.add_module('Conv2d', GhostModule(inp=output_filters[-1], oup=filters, kernel_size=k, stride=stride, relu=False))
+                modules.add_module('EcaLayer', Eca_layer(filters, k))
             else:  # multiple-size conv
                 modules.add_module('MixConv2d', MixConv2d(in_ch=output_filters[-1],
                                                           out_ch=filters,
@@ -157,7 +158,7 @@ def create_modules(module_defs, img_size, cfg):
 
             if bn:
                 modules.add_module('BatchNorm2d', nn.BatchNorm2d(filters, momentum=0.03, eps=1E-4))
-                modules.add_module('EcaLayer', Eca_layer(filters, k))
+                # modules.add_module('EcaLayer', Eca_layer(filters, k))
             else:
                 routs.append(i)  # detection output (goes into yolo layer)
 
