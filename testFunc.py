@@ -13,4 +13,4 @@ def _make_divisible(v, divisor, min_value=None):
         new_v += divisor
     return new_v
 
-print(_make_divisible(16, 4))
+print(_make_divisible(672.0, 4))
