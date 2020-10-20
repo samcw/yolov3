@@ -32,6 +32,48 @@ class Eca_layer(nn.Module):
 
         return x * y.expand_as(x)
 
+# WeightNet
+class WeightNet(M.Module):
+    r"""Applies WeightNet to a standard convolution.
+    The grouped fc layer directly generates the convolutional kernel,
+    this layer has M*inp inputs, G*oup groups and oup*inp*ksize*ksize outputs.
+    M/G control the amount of parameters.
+    """
+
+    def __init__(self, inp, oup, ksize, stride):
+        super().__init__()
+
+        self.M = 2
+        self.G = 2
+
+        self.pad = ksize // 2
+        inp_gap = max(16, inp // 16)
+        self.inp = inp
+        self.oup = oup
+        self.ksize = ksize
+        self.stride = stride
+
+        self.wn_fc1 = M.Conv2d(inp_gap, self.M * oup, 1, 1, 0, groups=1, bias=True)
+        self.sigmoid = M.Sigmoid()
+        self.wn_fc2 = M.Conv2d(self.M * oup, oup * inp * ksize * ksize, 1, 1, 0, groups=self.G * oup, bias=False)
+
+    def forward(self, x, x_gap):
+        x_w = self.wn_fc1(x_gap)
+        x_w = self.sigmoid(x_w)
+        x_w = self.wn_fc2(x_w)
+
+        if x.shape[0] == 1:  # case of batch size = 1
+            x_w = x_w.reshape(self.oup, self.inp, self.ksize, self.ksize)
+            x = F.conv2d(x, weight=x_w, stride=self.stride, padding=self.pad)
+            return x
+
+        x = x.reshape(1, -1, x.shape[2], x.shape[3])
+        x_w = x_w.reshape(-1, self.oup, self.inp, self.ksize, self.ksize)
+        x = F.conv2d(x, weight=x_w, stride=self.stride, padding=self.pad, groups=x_w.shape[0])
+        x = x.reshape(-1, self.oup, x.shape[2], x.shape[3])
+        return x
+
+
 # GhostModule
 class GhostModule(nn.Module):
     def __init__(self, inp, oup, kernel_size=1, ratio=2, dw_size=3, stride=1, relu=True):
@@ -98,6 +140,9 @@ class GhostBottleneck(nn.Module):
         # Point-wise expansion
         self.ghost1 = GhostModule(in_chs, mid_chs, relu=True)
 
+        # WeightNet layer
+        self.wetnet1 = WeightNet(in_chs, mid_chs, 1, 1)
+
         # Depth-wise convolution
         if self.stride > 1:
             self.conv_dw = nn.Conv2d(mid_chs, mid_chs, dw_kernel_size, stride=stride,
@@ -113,6 +158,9 @@ class GhostBottleneck(nn.Module):
 
         # Point-wise linear projection
         self.ghost2 = GhostModule(mid_chs, out_chs, relu=False)
+
+        # WeightNet layer
+        self.wetnet2 = WeightNet(mid_chs, out_chs, 1, 1)
 
         # shortcut
         if (in_chs == out_chs and self.stride == 1):
@@ -131,7 +179,7 @@ class GhostBottleneck(nn.Module):
         residual = x
 
         # 1st ghost bottleneck
-        x = self.ghost1(x)
+        x = self.ghost1(x) + self.wetnet1(x)
 
         # Depth-wise convolution
         if self.stride > 1:
@@ -143,7 +191,7 @@ class GhostBottleneck(nn.Module):
             x = self.se(x)
 
         # 2nd ghost bottleneck
-        x = self.ghost2(x)
+        x = self.ghost2(x) + self.wetnet2(x)
 
         x += self.shortcut(residual)
         return x
