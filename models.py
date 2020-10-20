@@ -33,45 +33,64 @@ class Eca_layer(nn.Module):
         return x * y.expand_as(x)
 
 # WeightNet
-class WeightNet(M.Module):
+
+def conv2d_sample_by_sample(
+    x: torch.Tensor,
+    weight: torch.Tensor,
+    oup: int,
+    inp: int,
+    ksize: int,
+    stride: int,
+    groups: int,
+) -> torch.Tensor:
+    padding, batch_size = ksize // 2, x.shape[0]
+    if batch_size == 1:
+        out = F.conv2d(
+            x,
+            weight=weight.view(oup, inp, ksize, ksize),
+            stride=stride,
+            padding=padding,
+            groups=groups,
+        )
+    else:
+        out = F.conv2d(
+            x.view(1, -1, x.shape[2], x.shape[3]),
+            weight.view(batch_size * oup, inp, ksize, ksize),
+            stride=stride,
+            padding=padding,
+            groups=groups * batch_size,
+        )
+        out = out.permute([1, 0, 2, 3]).view(
+            batch_size, oup, out.shape[2], out.shape[3]
+        )
+    return out
+class WeightNet(nn.Module):
     r"""Applies WeightNet to a standard convolution.
     The grouped fc layer directly generates the convolutional kernel,
     this layer has M*inp inputs, G*oup groups and oup*inp*ksize*ksize outputs.
     M/G control the amount of parameters.
     """
 
-    def __init__(self, inp, oup, ksize, stride):
+    def __init__(self, inp, oup, ksize, stride, M=2, G=2):
         super().__init__()
-
-        self.M = 2
-        self.G = 2
-
-        self.pad = ksize // 2
         inp_gap = max(16, inp // 16)
         self.inp = inp
         self.oup = oup
         self.ksize = ksize
         self.stride = stride
 
-        self.wn_fc1 = M.Conv2d(inp_gap, self.M * oup, 1, 1, 0, groups=1, bias=True)
-        self.sigmoid = M.Sigmoid()
-        self.wn_fc2 = M.Conv2d(self.M * oup, oup * inp * ksize * ksize, 1, 1, 0, groups=self.G * oup, bias=False)
+        self.wn_fc1 = nn.Conv2d(inp_gap, M * oup, 1, 1, 0, groups=1, bias=True)
+        self.wn_fc2 = nn.Conv2d(
+            M * oup, oup * inp * ksize * ksize, 1, 1, 0, groups=G * oup, bias=False
+        )
 
     def forward(self, x, x_gap):
         x_w = self.wn_fc1(x_gap)
-        x_w = self.sigmoid(x_w)
+        x_w = torch.sigmoid(x_w)
         x_w = self.wn_fc2(x_w)
-
-        if x.shape[0] == 1:  # case of batch size = 1
-            x_w = x_w.reshape(self.oup, self.inp, self.ksize, self.ksize)
-            x = F.conv2d(x, weight=x_w, stride=self.stride, padding=self.pad)
-            return x
-
-        x = x.reshape(1, -1, x.shape[2], x.shape[3])
-        x_w = x_w.reshape(-1, self.oup, self.inp, self.ksize, self.ksize)
-        x = F.conv2d(x, weight=x_w, stride=self.stride, padding=self.pad, groups=x_w.shape[0])
-        x = x.reshape(-1, self.oup, x.shape[2], x.shape[3])
-        return x
+        return conv2d_sample_by_sample(
+            x, x_w, self.oup, self.inp, self.ksize, self.stride, 1
+        )
 
 
 # GhostModule
