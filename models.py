@@ -32,67 +32,6 @@ class Eca_layer(nn.Module):
 
         return x * y.expand_as(x)
 
-# WeightNet
-
-def conv2d_sample_by_sample(
-    x: torch.Tensor,
-    weight: torch.Tensor,
-    oup: int,
-    inp: int,
-    ksize: int,
-    stride: int,
-    groups: int,
-) -> torch.Tensor:
-    padding, batch_size = ksize // 2, x.shape[0]
-    if batch_size == 1:
-        out = F.conv2d(
-            x,
-            weight=weight.view(oup, inp, ksize, ksize),
-            stride=stride,
-            padding=padding,
-            groups=groups,
-        )
-    else:
-        out = F.conv2d(
-            x.view(1, -1, x.shape[2], x.shape[3]),
-            weight.view(batch_size * oup, inp, ksize, ksize),
-            stride=stride,
-            padding=padding,
-            groups=groups * batch_size,
-        )
-        out = out.permute([1, 0, 2, 3]).view(
-            batch_size, oup, out.shape[2], out.shape[3]
-        )
-    return out
-class WeightNet(nn.Module):
-    r"""Applies WeightNet to a standard convolution.
-    The grouped fc layer directly generates the convolutional kernel,
-    this layer has M*inp inputs, G*oup groups and oup*inp*ksize*ksize outputs.
-    M/G control the amount of parameters.
-    """
-
-    def __init__(self, inp, oup, ksize, stride, M=2, G=2):
-        super().__init__()
-        inp_gap = max(16, inp // 16)
-        self.inp = inp
-        self.oup = oup
-        self.ksize = ksize
-        self.stride = stride
-
-        self.wn_fc1 = nn.Conv2d(inp_gap, M * oup, 1, 1, 0, groups=1, bias=True)
-        self.wn_fc2 = nn.Conv2d(
-            M * oup, oup * inp * ksize * ksize, 1, 1, 0, groups=G * oup, bias=False
-        )
-
-    def forward(self, x, x_gap):
-        x_w = self.wn_fc1(x_gap)
-        x_w = torch.sigmoid(x_w)
-        x_w = self.wn_fc2(x_w)
-        return conv2d_sample_by_sample(
-            x, x_w, self.oup, self.inp, self.ksize, self.stride, 1
-        )
-
-
 # GhostModule
 class GhostModule(nn.Module):
     def __init__(self, inp, oup, kernel_size=1, ratio=2, dw_size=3, stride=1, relu=True):
@@ -159,9 +98,6 @@ class GhostBottleneck(nn.Module):
         # Point-wise expansion
         self.ghost1 = GhostModule(in_chs, mid_chs, relu=True)
 
-        # WeightNet layer
-        self.wetnet1 = WeightNet(in_chs, mid_chs, 1, 1)
-
         # Depth-wise convolution
         if self.stride > 1:
             self.conv_dw = nn.Conv2d(mid_chs, mid_chs, dw_kernel_size, stride=stride,
@@ -170,16 +106,16 @@ class GhostBottleneck(nn.Module):
             self.bn_dw = nn.BatchNorm2d(mid_chs)
 
         # Squeeze-and-excitation
-        if has_se:
-            self.se = SqueezeExcite(mid_chs, se_ratio=se_ratio)
-        else:
-            self.se = None
+        # if has_se:
+            # self.se = SqueezeExcite(mid_chs, se_ratio=se_ratio)
+        # else:
+        #     self.se = None
+
+        # Eca-layer
+        self.eca = Eca_layer(mid_chs, dw_kernel_size)
 
         # Point-wise linear projection
         self.ghost2 = GhostModule(mid_chs, out_chs, relu=False)
-
-        # WeightNet layer
-        self.wetnet2 = WeightNet(mid_chs, out_chs, 1, 1)
 
         # shortcut
         if (in_chs == out_chs and self.stride == 1):
@@ -198,7 +134,7 @@ class GhostBottleneck(nn.Module):
         residual = x
 
         # 1st ghost bottleneck
-        x = self.ghost1(x) + self.wetnet1(x)
+        x = self.ghost1(x)
 
         # Depth-wise convolution
         if self.stride > 1:
@@ -206,11 +142,11 @@ class GhostBottleneck(nn.Module):
             x = self.bn_dw(x)
 
         # Squeeze-and-excitation
-        if self.se is not None:
-            x = self.se(x)
+        if self.eca is not None:
+            x = self.eca(x)
 
         # 2nd ghost bottleneck
-        x = self.ghost2(x) + self.wetnet2(x)
+        x = self.ghost2(x)
 
         x += self.shortcut(residual)
         return x
