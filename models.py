@@ -111,13 +111,16 @@ class GhostBottleneck(nn.Module):
         # else:
         #     self.se = None
 
-        self.se = SqueezeExcite(mid_chs)
+        # self.se = SqueezeExcite(mid_chs)
 
         # Eca-layer
-        # self.eca = Eca_layer(mid_chs, dw_kernel_size)
+        self.eca1 = Eca_layer(mid_chs, dw_kernel_size)
 
         # Point-wise linear projection
         self.ghost2 = GhostModule(mid_chs, out_chs, relu=False)
+
+        # Eca-layer
+        self.eca2 = Eca_layer(out_chs, dw_kernel_size)
 
         # shortcut
         if (in_chs == out_chs and self.stride == 1):
@@ -144,8 +147,10 @@ class GhostBottleneck(nn.Module):
             x = self.bn_dw(x)
 
         # Squeeze-and-excitation
-        if self.se is not None:
-            x = self.se(x)
+        # if self.se is not None:
+        #         #     x = self.se(x)
+
+        x = self.eca1(x)
 
         # # Squeeze-and-excitation
         # if self.eca is not None:
@@ -153,6 +158,8 @@ class GhostBottleneck(nn.Module):
 
         # 2nd ghost bottleneck
         x = self.ghost2(x)
+
+        x = self.eca2(x)
 
         x += self.shortcut(residual)
         return x
