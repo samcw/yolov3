@@ -62,7 +62,7 @@ def test(cfg,
     niou = iouv.numel()
 
     # Dataloader
-    if dataloader is None:
+    if dataloader is None:m
         dataset = LoadImagesAndLabels(path, imgsz, batch_size, rect=True, single_cls=opt.single_cls, pad=0.5)
         batch_size = min(batch_size, len(dataset))
         dataloader = DataLoader(dataset,
