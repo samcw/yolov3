@@ -120,7 +120,7 @@ class GhostBottleneck(nn.Module):
         self.ghost2 = GhostModule(mid_chs, out_chs, relu=False)
 
         # Eca-layer
-        self.eca2 = Eca_layer(out_chs, dw_kernel_size)
+        # self.eca2 = Eca_layer(out_chs, dw_kernel_size)
 
         # shortcut
         if (in_chs == out_chs and self.stride == 1):
@@ -159,7 +159,7 @@ class GhostBottleneck(nn.Module):
         # 2nd ghost bottleneck
         x = self.ghost2(x)
 
-        x = self.eca2(x)
+        # x = self.eca2(x)
 
         x += self.shortcut(residual)
         return x
