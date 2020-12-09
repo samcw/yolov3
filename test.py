@@ -82,22 +82,11 @@ def test(data,
         log_imgs = 0
 
     # Dataloader
-<<<<<<< HEAD
-    if dataloader is None:m
-        dataset = LoadImagesAndLabels(path, imgsz, batch_size, rect=True, single_cls=opt.single_cls, pad=0.5)
-        batch_size = min(batch_size, len(dataset))
-        dataloader = DataLoader(dataset,
-                                batch_size=batch_size,
-                                num_workers=min([os.cpu_count(), batch_size if batch_size > 1 else 0, 8]),
-                                pin_memory=True,
-                                collate_fn=dataset.collate_fn)
-=======
     if not training:
         img = torch.zeros((1, 3, imgsz, imgsz), device=device)  # init img
         _ = model(img.half() if half else img) if device.type != 'cpu' else None  # run once
         path = data['test'] if opt.task == 'test' else data['val']  # path to val/test images
         dataloader = create_dataloader(path, imgsz, batch_size, model.stride.max(), opt, pad=0.5, rect=True)[0]
->>>>>>> 6b1fe3e9dd3dd8746ada7905b6673edad8043ad2
 
     seen = 0
     confusion_matrix = ConfusionMatrix(nc=nc)
