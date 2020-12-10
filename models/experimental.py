@@ -170,7 +170,8 @@ class GhostBottleneck(nn.Module):
         self.stride = stride
 
         # mid channel
-        mid_chs = out_chs // 2
+        out_chs = _make_divisible(out_chs * 1.0, 4)
+        mid_chs = _make_divisible(out_chs * 1.0, 4)
 
         # Point-wise expansion
         self.ghost1 = GhostConv(in_chs, mid_chs)
