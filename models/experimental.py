@@ -145,20 +145,80 @@ class GhostConv(nn.Module):
         return torch.cat([y, self.cv2(y)], 1)
 
 
+# class GhostBottleneck(nn.Module):
+#     # Ghost Bottleneck https://github.com/huawei-noah/ghostnet
+#     def __init__(self, c1, c2, k, s=1):
+#         super(GhostBottleneck, self).__init__()
+#         c_ = c2 // 2
+#         self.conv = nn.Sequential(GhostConv(c1, c_, 1, 1),  # pw
+#                                   DWConv(c_, c_, k, s, act=False) if s == 2 else nn.Identity(),  # dw
+#                                   SqueezeExcite(c_),  # se
+#                                   GhostConv(c_, c2, 1, 1, act=False))  # pw-linear
+#         self.shortcut = nn.Sequential(DWConv(c1, c1, k, s, act=False),
+#                                       Conv(c1, c2, 1, 1, act=False)) if s == 2 else nn.Identity()
+#
+#     def forward(self, x):
+#         return self.conv(x) + self.shortcut(x)
+
 class GhostBottleneck(nn.Module):
-    # Ghost Bottleneck https://github.com/huawei-noah/ghostnet
-    def __init__(self, c1, c2, k, s=1):
+    """ Ghost bottleneck w/ optional SE"""
+
+    def __init__(self, in_chs, out_chs, dw_kernel_size=3,
+                 stride=1, act_layer=nn.ReLU, se_ratio=0.):
         super(GhostBottleneck, self).__init__()
-        c_ = c2 // 2
-        self.conv = nn.Sequential(GhostConv(c1, c_, 1, 1),  # pw
-                                  DWConv(c_, c_, k, s, act=False) if s == 2 else nn.Identity(),  # dw
-                                  # SqueezeExcite(c_),  # se
-                                  GhostConv(c_, c2, 1, 1, act=False))  # pw-linear
-        self.shortcut = nn.Sequential(DWConv(c1, c1, k, s, act=False),
-                                      Conv(c1, c2, 1, 1, act=False)) if s == 2 else nn.Identity()
+        has_se = se_ratio is not None and se_ratio > 0.
+        self.stride = stride
+
+        # mid channel
+        mid_chs = out_chs // 2
+
+        # Point-wise expansion
+        self.ghost1 = GhostConv(in_chs, mid_chs)
+
+        # Depth-wise convolution
+        if self.stride > 1:
+            self.conv_dw = nn.Conv2d(mid_chs, mid_chs, dw_kernel_size, stride=stride,
+                                     padding=(dw_kernel_size - 1) // 2,
+                                     groups=mid_chs, bias=False)
+            self.bn_dw = nn.BatchNorm2d(mid_chs)
+
+        # Squeeze-and-excitation
+        self.se = SqueezeExcite(mid_chs)
+
+        # Point-wise linear projection
+        self.ghost2 = GhostConv(mid_chs, out_chs)
+
+        # shortcut
+        if (in_chs == out_chs and self.stride == 1):
+            self.shortcut = nn.Sequential()
+        else:
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(in_chs, in_chs, dw_kernel_size, stride=stride,
+                          padding=(dw_kernel_size - 1) // 2, groups=in_chs, bias=False),
+                nn.BatchNorm2d(in_chs),
+                nn.Conv2d(in_chs, out_chs, 1, stride=1, padding=0, bias=False),
+                nn.BatchNorm2d(out_chs),
+            )
 
     def forward(self, x):
-        return self.conv(x) + self.shortcut(x)
+        residual = x
+
+        # 1st ghost bottleneck
+        x = self.ghost1(x)
+
+        # Depth-wise convolution
+        if self.stride > 1:
+            x = self.conv_dw(x)
+            x = self.bn_dw(x)
+
+        # Squeeze-and-excitation
+        x = self.se(x)
+
+        # 2nd ghost bottleneck
+        x = self.ghost2(x)
+
+        x += self.shortcut(residual)
+        return x
 
 
 class MixConv2d(nn.Module):
