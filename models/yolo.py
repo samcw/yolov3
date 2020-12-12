@@ -277,12 +277,12 @@ if __name__ == '__main__':
     model = Model(opt.cfg).to(device)
 
 
-    # model.train()
+    model.train()
 
     # Profile
-    img = torch.rand(8 if torch.cuda.is_available() else 1, 3, 640, 640).to(device)
-    macs, params = profile(model, inputs=(img, ))
-    print(macs, params);
+    # img = torch.rand(8 if torch.cuda.is_available() else 1, 3, 640, 640).to(device)
+    # macs, params = profile(model, inputs=(img, ))
+    # print(macs, params);
     # y = model(img, profile=True)
 
     # Tensorboard
