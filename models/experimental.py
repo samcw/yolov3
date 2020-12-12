@@ -221,6 +221,66 @@ class GhostBottleneck(nn.Module):
         x += self.shortcut(residual)
         return x
 
+class GhostBottleneckEca(nn.Module):
+    """ Ghost bottleneck w/ optional SE"""
+
+    def __init__(self, in_chs, out_chs, dw_kernel_size=3,
+                 stride=1, act_layer=nn.ReLU, se_ratio=0.):
+        super(GhostBottleneckEca, self).__init__()
+        has_se = se_ratio is not None and se_ratio > 0.
+        self.stride = stride
+
+        # mid channel
+        out_chs = _make_divisible(out_chs * 1.0, 4)
+        mid_chs = _make_divisible(out_chs * 1.0, 4)
+
+        # Point-wise expansion
+        self.ghost1 = GhostConv(in_chs, mid_chs)
+
+        # Depth-wise convolution
+        if self.stride > 1:
+            self.conv_dw = nn.Conv2d(mid_chs, mid_chs, dw_kernel_size, stride=stride,
+                                     padding=(dw_kernel_size - 1) // 2,
+                                     groups=mid_chs, bias=False)
+            self.bn_dw = nn.BatchNorm2d(mid_chs)
+
+        # Squeeze-and-excitation
+        self.eca = Eca_layer(mid_chs)
+
+        # Point-wise linear projection
+        self.ghost2 = GhostConv(mid_chs, out_chs)
+
+        # shortcut
+        if (in_chs == out_chs and self.stride == 1):
+            self.shortcut = nn.Sequential()
+        else:
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(in_chs, in_chs, dw_kernel_size, stride=stride,
+                          padding=(dw_kernel_size - 1) // 2, groups=in_chs, bias=False),
+                nn.BatchNorm2d(in_chs),
+                nn.Conv2d(in_chs, out_chs, 1, stride=1, padding=0, bias=False),
+                nn.BatchNorm2d(out_chs),
+            )
+
+    def forward(self, x):
+        residual = x
+
+        # 1st ghost bottleneck
+        x = self.ghost1(x)
+
+        # Depth-wise convolution
+        if self.stride > 1:
+            x = self.conv_dw(x)
+            x = self.bn_dw(x)
+
+        # Squeeze-and-excitation
+        x = self.eca(x)
+
+        # 2nd ghost bottleneck
+        x = self.ghost2(x)
+
+        x += self.shortcut(residual)
+        return x
 
 class MixConv2d(nn.Module):
     # Mixed Depthwise Conv https://arxiv.org/abs/1907.09595
