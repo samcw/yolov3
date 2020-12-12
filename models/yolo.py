@@ -3,6 +3,7 @@ import logging
 import sys
 from copy import deepcopy
 from pathlib import Path
+from thop import profile
 
 import math
 import torch
@@ -274,10 +275,14 @@ if __name__ == '__main__':
 
     # Create model
     model = Model(opt.cfg).to(device)
-    model.train()
+
+
+    # model.train()
 
     # Profile
-    # img = torch.rand(8 if torch.cuda.is_available() else 1, 3, 640, 640).to(device)
+    img = torch.rand(8 if torch.cuda.is_available() else 1, 3, 640, 640).to(device)
+    macs, params = profile(model, inputs=(img, ))
+    print(macs, params);
     # y = model(img, profile=True)
 
     # Tensorboard
