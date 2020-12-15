@@ -281,7 +281,7 @@ class GhostBottleneckSandGlass(nn.Module):
 
         # Depth-wise for more space detail
         self.dw1 = nn.Sequential(
-            nn.Conv2d(in_chs, in_chs, 3, stride=stride, padding=(dw_kernel_size - 1) // 2, groups=in_chs, bias=False),
+            nn.Conv2d(in_chs, in_chs, dw_kernel_size, stride=stride, padding=(dw_kernel_size - 1) // 2, groups=in_chs, bias=False),
             nn.BatchNorm2d(in_chs),
             nn.ReLU6()
         )
@@ -297,7 +297,7 @@ class GhostBottleneckSandGlass(nn.Module):
 
         # Depth-wise for more space detail
         self.dw2 = nn.Sequential(
-            nn.Conv2d(out_chs, out_chs, 3, stride=stride, padding=(dw_kernel_size - 1) // 2, groups=out_chs, bias=False),
+            nn.Conv2d(out_chs, out_chs, dw_kernel_size, stride=stride, padding=(dw_kernel_size - 1) // 2, groups=out_chs, bias=False),
             nn.BatchNorm2d(out_chs)
         )
 
