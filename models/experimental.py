@@ -277,7 +277,7 @@ class GhostBottleneckSandGlass(nn.Module):
 
         # mid channel
         out_chs = _make_divisible(out_chs * 1.0, 4)
-        mid_chs = _make_divisible(in_chs * 0.25 * 1.0, 4)
+        mid_chs = _make_divisible(in_chs * 0.5 * 1.0, 4)
 
         # Depth-wise for more space detail
         self.dw1 = nn.Sequential(
