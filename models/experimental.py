@@ -144,22 +144,6 @@ class GhostConv(nn.Module):
         y = self.cv1(x)
         return torch.cat([y, self.cv2(y)], 1)
 
-
-# class GhostBottleneck(nn.Module):
-#     # Ghost Bottleneck https://github.com/huawei-noah/ghostnet
-#     def __init__(self, c1, c2, k, s=1):
-#         super(GhostBottleneck, self).__init__()
-#         c_ = c2 // 2
-#         self.conv = nn.Sequential(GhostConv(c1, c_, 1, 1),  # pw
-#                                   DWConv(c_, c_, k, s, act=False) if s == 2 else nn.Identity(),  # dw
-#                                   SqueezeExcite(c_),  # se
-#                                   GhostConv(c_, c2, 1, 1, act=False))  # pw-linear
-#         self.shortcut = nn.Sequential(DWConv(c1, c1, k, s, act=False),
-#                                       Conv(c1, c2, 1, 1, act=False)) if s == 2 else nn.Identity()
-#
-#     def forward(self, x):
-#         return self.conv(x) + self.shortcut(x)
-
 class GhostBottleneck(nn.Module):
     """ Ghost bottleneck w/ optional SE"""
 
@@ -171,7 +155,7 @@ class GhostBottleneck(nn.Module):
 
         # mid channel
         out_chs = _make_divisible(out_chs * 1.0, 4)
-        mid_chs = _make_divisible(out_chs * 1.0, 4)
+        mid_chs = _make_divisible(in_chs * 1.0, 4)
 
         # Point-wise expansion
         self.ghost1 = GhostConv(in_chs, mid_chs)
@@ -222,7 +206,7 @@ class GhostBottleneck(nn.Module):
         return x
 
 class GhostBottleneckEca(nn.Module):
-    """ Ghost bottleneck w/ optional SE"""
+    """ Ghost bottleneck with ECA"""
 
     def __init__(self, in_chs, out_chs, dw_kernel_size=3,
                  stride=1, act_layer=nn.ReLU, se_ratio=0.):
@@ -244,7 +228,7 @@ class GhostBottleneckEca(nn.Module):
                                      groups=mid_chs, bias=False)
             self.bn_dw = nn.BatchNorm2d(mid_chs)
 
-        # Squeeze-and-excitation
+        # Eca-Layer
         self.eca = Eca_layer(mid_chs)
 
         # Point-wise linear projection
@@ -278,6 +262,73 @@ class GhostBottleneckEca(nn.Module):
 
         # 2nd ghost bottleneck
         x = self.ghost2(x)
+
+        x += self.shortcut(residual)
+        return x
+
+class GhostBottleneckSandGlass(nn.Module):
+    """ Ghost bottleneck w/ optional SE"""
+
+    def __init__(self, in_chs, out_chs, dw_kernel_size=3,
+                 stride=1, act_layer=nn.ReLU, se_ratio=0.):
+        super(GhostBottleneckSandGlass, self).__init__()
+        has_se = se_ratio is not None and se_ratio > 0.
+        self.stride = stride
+
+        # mid channel
+        out_chs = _make_divisible(out_chs * 1.0, 4)
+        mid_chs = _make_divisible(out_chs * 0.5 * 1.0, 4)
+
+        # Depth-wise for more space detail
+        self.dw1 = nn.Sequential(
+            nn.Conv2d(in_chs, in_chs, 3, stride=stride, padding=(dw_kernel_size - 1) // 2, groups=in_chs, bias=False),
+            nn.BatchNorm2d(in_chs),
+            nn.ReLU6()
+        )
+
+        # Point-wise expansion
+        self.ghost1 = GhostConv(in_chs, mid_chs)
+
+        # Eca-Layer
+        self.eca = Eca_layer(mid_chs)
+
+        # Point-wise linear projection
+        self.ghost2 = GhostConv(mid_chs, out_chs)
+
+        # Depth-wise for more space detail
+        self.dw2 = nn.Sequential(
+            nn.Conv2d(out_chs, out_chs, 3, stride=stride, padding=(dw_kernel_size - 1) // 2, groups=in_chs, bias=False),
+            nn.BatchNorm2d(out_chs),
+            nn.Linear(out_chs, out_chs, False)
+        )
+
+        # shortcut
+        if (in_chs == out_chs and self.stride == 1):
+            self.shortcut = nn.Sequential()
+        else:
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(in_chs, in_chs, dw_kernel_size, stride=stride,
+                          padding=(dw_kernel_size - 1) // 2, groups=in_chs, bias=False),
+                nn.BatchNorm2d(in_chs),
+                nn.Conv2d(in_chs, out_chs, 1, stride=1, padding=0, bias=False),
+                nn.BatchNorm2d(out_chs),
+            )
+
+    def forward(self, x):
+        residual = x
+
+        x = self.dw1(x)
+
+        # 1st ghost bottleneck
+        x = self.ghost1(x)
+
+        # eca
+        x = self.eca(x)
+
+        # 2nd ghost bottleneck
+        x = self.ghost2(x)
+
+        x = self.dw2(x)
 
         x += self.shortcut(residual)
         return x
