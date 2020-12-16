@@ -277,7 +277,7 @@ class GhostBottleneckSandGlass(nn.Module):
 
         # mid channel
         out_chs = _make_divisible(out_chs * 1.0, 4)
-        mid_chs = _make_divisible(in_chs * 0.5 * 1.0, 4)
+        mid_chs = _make_divisible(in_chs * 0.75 * 1.0, 4)
 
         # Depth-wise for more space detail
         self.dw1 = nn.Sequential(
@@ -290,7 +290,7 @@ class GhostBottleneckSandGlass(nn.Module):
         self.ghost1 = GhostConv(in_chs, mid_chs)
 
         # Eca-Layer
-        self.eca = Eca_layer(mid_chs)
+        self.eca = Eca_layer(out_chs)
 
         # Point-wise linear projection
         self.ghost2 = GhostConv(mid_chs, out_chs)
@@ -321,13 +321,13 @@ class GhostBottleneckSandGlass(nn.Module):
         # 1st ghost bottleneck
         x = self.ghost1(x)
 
-        # eca
-        x = self.eca(x)
-
         # 2nd ghost bottleneck
         x = self.ghost2(x)
 
         x = self.dw2(x)
+
+        # eca
+        x = self.eca(x)
 
         x += self.shortcut(residual)
         return x
